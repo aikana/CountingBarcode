@@ -10,6 +10,10 @@ import java.io.Reader;
 import java.io.Writer;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
+import java.util.LinkedList;
+import java.util.Map;
+import java.util.zip.GZIPInputStream;
+import java.util.zip.GZIPOutputStream;
 
 public class AnalyizeResult {
 	
@@ -158,5 +162,111 @@ public class AnalyizeResult {
 		}
 		return str;
 	}
+	
+	HashMap<String, String> generateVariationMap(String inputFilePath, String []originals) {
+		HashMap<String, String> map = new HashMap<String, String>();
+		System.out.println("Start to Generate variation Map");
+		try {
+			InputStream is = new FileInputStream(inputFilePath);
+			Reader rpt = new InputStreamReader(is, StandardCharsets.UTF_8);
+			BufferedReader bread = new BufferedReader(rpt);
+			
+			OutputStream os1 = new FileOutputStream("./variations.txt");
+			Writer wpt1 = new OutputStreamWriter(os1, StandardCharsets.UTF_8);
+			BufferedWriter bwrt1 = new BufferedWriter(wpt1);
+		
+			// input same barcode
+			for (int i =0 ; i < originals.length; i ++) {
+				map.put(originals[i], originals[i]);
+			}
+			
+			// input variation with original
+			String line = "";
+			while ((line =bread.readLine()) != null) {
+				String[] elements = line.split("/");
+				if ( elements.length == 3)
+				{
+					// variation 1 and 2
+					String vari_key = elements[1].trim();
+					String origin = vari_key.split("_")[0]; //
+					map.put(elements[0].trim(), origin);
+					//System.out.println(elements[0].trim() +"////");
+				}
+			}
+			//System.out.println(map.keySet().size());
+			for (String key : map.keySet()) {
+				String temp = new String();
+				temp = temp.format("%s %s\n", key, map.get(key));
+				bwrt1.write(temp);
+			}
+			System.out.println("Generating variation set is done");
+			bread.close();
+			bwrt1.close();
+			System.out.println("End to Generate variation Map");
+		}
+		catch (Exception e) {
+			e.printStackTrace();
+		}
+		return map;
+	}
+	
 
+	boolean getSeparatedGZipBasedOnBarcode(String outputFilePath, String inputFilePath, String resultPath, String []originals)
+	{
+		// map with variation ; origin matches
+		HashMap<String, String> map = generateVariationMap(resultPath, originals);
+		try {
+			// file input - gzip fastq			
+			InputStream is = new GZIPInputStream(new FileInputStream(inputFilePath));
+			Reader rpt = new InputStreamReader(is, StandardCharsets.UTF_8);
+			BufferedReader bread = new BufferedReader(rpt);
+			// output array
+			int size = originals.length; 
+			OutputStream []os = new GZIPOutputStream[size];
+			Writer []wpt = new OutputStreamWriter[size];
+			
+			BufferedWriter []bwrt = new BufferedWriter[size];
+			for (int i = 0; i < size ; i ++) {
+				os[i] = new GZIPOutputStream( new FileOutputStream(outputFilePath+originals[i]+".gz"));
+				wpt[i] = new OutputStreamWriter(os[i], StandardCharsets.UTF_8);
+				bwrt[i] = new BufferedWriter(wpt[i]);
+			}
+			String line[] = new String[4];
+			int count =0;
+			while ((line[0] = bread.readLine()) != null) {
+				if (line[0].indexOf("@") != -1) {
+					// file read for 
+					line[1] = bread.readLine();
+					line[2] = bread.readLine();
+					line[3] = bread.readLine();
+					
+					// code find
+					String code = line[0].substring(line[0].lastIndexOf(":") + 1);
+					if (map.containsKey(code)) {
+						String origin = map.get(code);
+						// file output stream search
+						for (int i = 0; i < size; i ++) {
+							if (originals[i].compareToIgnoreCase(origin)==0) {
+								for (int j=0; j < 4; j++) {
+									bwrt[i].write(line[j]+"\n");
+									//System.out.print(i+" th : " + line[j]+"\n");
+								}
+								break;
+							}
+						}
+					}
+				}
+			}
+			
+			//close all stream.
+			bread.close();
+			for (int i =0 ; i < size ; i ++)	wpt[i].close();
+			System.out.println("Separation is completed");
+		}
+		catch(Exception e) {
+			e.printStackTrace();
+		}
+		
+		return true;
+	}	
 }
